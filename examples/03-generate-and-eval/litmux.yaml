@@ -1,0 +1,26 @@
+models:
+  - model: gpt-4o-mini
+  - model: claude-haiku-4-5-20251001
+
+tests:
+  - name: classify_basic
+    prompt: prompts/classify.txt
+    inputs:
+      ticket: "I can't login to my account"
+    assert:
+      - type: json-valid
+      - type: contains
+        value: "auth"
+
+evals:
+  - name: ticket_classifier
+    prompt: prompts/classify.txt
+    dataset: datasets/seed_tickets.csv
+    input_mapping:
+      ticket: text
+    expected: expected_category
+    assert:
+      - type: json-valid
+    judge:
+      criteria: "Did the model correctly classify the support ticket?"
+      threshold: 7.0

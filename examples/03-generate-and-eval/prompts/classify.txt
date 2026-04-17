@@ -1,0 +1,6 @@
+Classify the following customer support ticket into exactly one category.
+Return ONLY a JSON object with a "category" field.
+
+Categories: auth, billing, shipping, returns, product, technical, other
+
+Ticket: {{ticket}}

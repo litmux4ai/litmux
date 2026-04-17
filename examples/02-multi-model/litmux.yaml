@@ -1,0 +1,26 @@
+models:
+  - model: gpt-4o-mini
+  - model: claude-haiku-4-5-20251001
+  # Uncomment if you have HF_TOKEN:
+  # - provider: huggingface
+  #   model: meta-llama/Llama-3.1-8B-Instruct
+
+tests:
+  - name: classify_ticket
+    prompt: prompts/classify.txt
+    inputs:
+      ticket: "I can't login to my account"
+    assert:
+      - type: json-valid
+      - type: contains
+        value: "auth"
+      - type: cost-less-than
+        value: 0.01
+
+  - name: summarize
+    prompt: "Summarize in 2 sentences: Revenue grew 15% to $4.2B. Margins improved to 28%."
+    assert:
+      - type: contains
+        value: "revenue"
+      - type: contains
+        value: "15%"

@@ -1,0 +1,11 @@
+models:
+  - model: gpt-4o-mini
+
+tests:
+  - name: hello_world
+    prompt: "Say hello in one sentence. Be friendly."
+    assert:
+      - type: contains
+        value: "hello"
+      - type: latency-less-than
+        value: 5000

@@ -1,0 +1,6 @@
+text,expected_category,difficulty
+"I can't login to my account",auth,easy
+"My credit card was charged twice",billing,medium
+"Where is my package?",shipping,easy
+"I want to return this item",returns,easy
+"The app crashes when I open it",technical,medium
