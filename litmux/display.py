@@ -157,6 +157,195 @@ def print_savings_summary(
     console.print(f"  vs most expensive: {most_expensive_name} (${expensive_monthly:,.0f}/mo)")
     console.print(f"  [green]→ Save ${savings:,.0f}/month (${savings * 12:,.0f}/year)[/green]")
     console.print()
+
+
+def print_recommendation(
+    results: list[TestResult], daily_volume: int = 10_000
+) -> None:
+    """Print a bold recommendation box: cheapest passing model + savings."""
+    # Collect per-model stats
+    model_stats: dict[str, dict] = {}
+    for tr in results:
+        for mr in tr.model_results:
+            name = mr.model_name
+            if name not in model_stats:
+                model_stats[name] = {
+                    "passed_all": True,
+                    "total_cost": 0.0,
+                    "latency": [],
+                    "input_tokens": [],
+                    "output_tokens": [],
+                    "model": mr.model_config_obj.model,
+                    "total_tests": 0,
+                    "passed_tests": 0,
+                }
+            if mr.error or not mr.passed:
+                model_stats[name]["passed_all"] = False
+            else:
+                model_stats[name]["passed_tests"] += 1
+            model_stats[name]["total_tests"] += 1
+            model_stats[name]["total_cost"] += mr.cost_usd
+            model_stats[name]["latency"].append(mr.latency_ms)
+            model_stats[name]["input_tokens"].append(mr.input_tokens)
+            model_stats[name]["output_tokens"].append(mr.output_tokens)
+
+    # Need at least 2 models to make a recommendation
+    if len(model_stats) < 2:
+        return
+
+    passing = {k: v for k, v in model_stats.items() if v["passed_all"]}
+    if not passing:
+        return
+
+    # Project costs
+    for name, stats in model_stats.items():
+        avg_in = sum(stats["input_tokens"]) / max(len(stats["input_tokens"]), 1)
+        avg_out = sum(stats["output_tokens"]) / max(len(stats["output_tokens"]), 1)
+        proj = project_cost(stats["model"], int(avg_in), int(avg_out), daily_volume)
+        stats["monthly"] = proj["monthly"]
+        stats["per_call"] = proj["per_call"]
+        stats["avg_latency"] = sum(stats["latency"]) / max(len(stats["latency"]), 1)
+
+    cheapest_name, cheapest = min(passing.items(), key=lambda x: x[1]["monthly"])
+    most_exp_name, most_exp = max(model_stats.items(), key=lambda x: x[1]["monthly"])
+
+    if cheapest_name == most_exp_name:
+        return
+
+    savings_monthly = most_exp["monthly"] - cheapest["monthly"]
+    if savings_monthly <= 0:
+        return
+
+    savings_pct = (savings_monthly / most_exp["monthly"] * 100) if most_exp["monthly"] > 0 else 0
+
+    # Speed comparison
+    cheapest_lat = cheapest["avg_latency"]
+    expensive_lat = most_exp["avg_latency"]
+    speed_ratio = expensive_lat / cheapest_lat if cheapest_lat > 0 else 0
+
+    # Build the recommendation box
+    total_tests = cheapest["total_tests"]
+    lines: list[str] = []
+    lines.append("")
+    lines.append(f"  [bold green]✅ Passes all {total_tests} tests[/bold green]", )
+
+    badges: list[str] = []
+    if speed_ratio > 1.1:
+        badges.append(f"⚡ {speed_ratio:.1f}x faster")
+    badges.append(f"💰 {savings_pct:.0f}% cheaper")
+    if badges:
+        lines.append(f"  {' · '.join(badges)}")
+
+    lines.append("")
+    if cheapest["monthly"] == 0:
+        lines.append(f"  Saves [bold green]${savings_monthly:,.0f}/month[/bold green] ([bold green]${savings_monthly * 12:,.0f}/year[/bold green]) at {daily_volume:,} calls/day")
+    else:
+        lines.append(f"  Saves [bold green]${savings_monthly:,.0f}/month[/bold green] ([bold green]${savings_monthly * 12:,.0f}/year[/bold green]) at {daily_volume:,} calls/day")
+    lines.append(f"  vs [dim]{most_exp_name}[/dim]")
+
+    body = "\n".join(lines)
+    title = f"[bold]💡 RECOMMENDATION: Switch to [cyan]{cheapest_name}[/cyan][/bold]"
+
+    console.print(
+        Panel(
+            body,
+            title=title,
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+    console.print()
+
+
+def get_recommendation_data(
+    results: list[TestResult], daily_volume: int = 10_000
+) -> dict | None:
+    """Extract recommendation data for use in reports. Returns None if no recommendation."""
+    model_stats: dict[str, dict] = {}
+    for tr in results:
+        for mr in tr.model_results:
+            name = mr.model_name
+            if name not in model_stats:
+                model_stats[name] = {
+                    "passed_all": True,
+                    "total_cost": 0.0,
+                    "latency": [],
+                    "input_tokens": [],
+                    "output_tokens": [],
+                    "model": mr.model_config_obj.model,
+                    "total_tests": 0,
+                    "passed_tests": 0,
+                }
+            if mr.error or not mr.passed:
+                model_stats[name]["passed_all"] = False
+            else:
+                model_stats[name]["passed_tests"] += 1
+            model_stats[name]["total_tests"] += 1
+            model_stats[name]["total_cost"] += mr.cost_usd
+            model_stats[name]["latency"].append(mr.latency_ms)
+            model_stats[name]["input_tokens"].append(mr.input_tokens)
+            model_stats[name]["output_tokens"].append(mr.output_tokens)
+
+    if len(model_stats) < 2:
+        return None
+
+    passing = {k: v for k, v in model_stats.items() if v["passed_all"]}
+    if not passing:
+        return None
+
+    for name, stats in model_stats.items():
+        avg_in = sum(stats["input_tokens"]) / max(len(stats["input_tokens"]), 1)
+        avg_out = sum(stats["output_tokens"]) / max(len(stats["output_tokens"]), 1)
+        proj = project_cost(stats["model"], int(avg_in), int(avg_out), daily_volume)
+        stats["monthly"] = proj["monthly"]
+        stats["per_call"] = proj["per_call"]
+        stats["avg_latency"] = sum(stats["latency"]) / max(len(stats["latency"]), 1)
+
+    cheapest_name, cheapest = min(passing.items(), key=lambda x: x[1]["monthly"])
+    most_exp_name, most_exp = max(model_stats.items(), key=lambda x: x[1]["monthly"])
+
+    if cheapest_name == most_exp_name:
+        return None
+
+    savings_monthly = most_exp["monthly"] - cheapest["monthly"]
+    if savings_monthly <= 0:
+        return None
+
+    savings_pct = (savings_monthly / most_exp["monthly"] * 100) if most_exp["monthly"] > 0 else 0
+    cheapest_lat = cheapest["avg_latency"]
+    expensive_lat = most_exp["avg_latency"]
+    speed_ratio = expensive_lat / cheapest_lat if cheapest_lat > 0 else 0
+
+    # Build model rows for report
+    model_rows = []
+    for name, stats in sorted(model_stats.items(), key=lambda x: x[1]["monthly"]):
+        model_rows.append({
+            "name": name,
+            "passed_all": stats["passed_all"],
+            "passed_tests": stats["passed_tests"],
+            "total_tests": stats["total_tests"],
+            "monthly": stats["monthly"],
+            "per_call": stats["per_call"],
+            "avg_latency": stats["avg_latency"],
+            "avg_input_tokens": sum(stats["input_tokens"]) / max(len(stats["input_tokens"]), 1),
+            "avg_output_tokens": sum(stats["output_tokens"]) / max(len(stats["output_tokens"]), 1),
+        })
+
+    return {
+        "cheapest_name": cheapest_name,
+        "most_expensive_name": most_exp_name,
+        "savings_monthly": savings_monthly,
+        "savings_yearly": savings_monthly * 12,
+        "savings_pct": savings_pct,
+        "speed_ratio": speed_ratio,
+        "cheapest_monthly": cheapest["monthly"],
+        "expensive_monthly": most_exp["monthly"],
+        "total_tests": cheapest["total_tests"],
+        "daily_volume": daily_volume,
+        "model_rows": model_rows,
+    }
+
+
 def print_eval_results(eval_results: list[EvalResult]) -> None:
     """Print eval results summary table."""
     if not eval_results:
