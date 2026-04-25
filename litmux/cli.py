@@ -26,6 +26,7 @@ from litmux.display import (
     print_cost_projection,
     print_eval_results,
     print_header,
+    print_recommendation,
     print_savings_summary,
     print_summary,
     print_test_result,
@@ -72,6 +73,7 @@ def run(
     volume: Optional[int] = typer.Option(None, "--volume", "-v", help="Daily volume for cost projection"),
     verbose: bool = typer.Option(False, "--verbose", help="Show model outputs"),
     no_sync: bool = typer.Option(False, "--no-sync", help="Do not upload results to Litmux Cloud, even if logged in"),
+    report: Optional[str] = typer.Option(None, "--report", help="Generate HTML cost report (default: litmux-report.html)"),
 ) -> None:
     """Run prompt tests across models."""
     if ci:
@@ -132,12 +134,28 @@ def run(
         print_summary(results)
         if len(cfg.models) > 1:
             print_savings_summary(results, daily_volume=volume or 10_000)
+            print_recommendation(results, daily_volume=volume or 10_000)
         if volume:
             print_cost_projection(results, volume)
     elif output == OutputFormat.ci:
         print(format_ci_output(results))
     elif output == OutputFormat.json:
         print(format_json_output(results))
+
+    # Generate HTML report
+    if report is not None:
+        from litmux.report import generate_report
+
+        report_path = report if report else "litmux-report.html"
+        html = generate_report(results, daily_volume=volume or 10_000)
+        with open(report_path, "w") as f:
+            f.write(html)
+        console.print(f"  [green]📄 Report saved → {report_path}[/green]")
+        try:
+            import webbrowser
+            webbrowser.open(f"file://{os.path.abspath(report_path)}")
+        except Exception:
+            pass
 
     # Sync to Litmux Cloud
     duration_ms = (time_module.perf_counter() - run_start) * 1000
@@ -310,6 +328,7 @@ def generate(
 def cost(
     config: Optional[str] = typer.Option(None, "--config", "-c", help="Path to config file"),
     volume: int = typer.Option(1000, "--volume", "-v", help="Daily call volume"),
+    report: Optional[str] = typer.Option(None, "--report", help="Generate HTML cost report (default: litmux-report.html)"),
 ) -> None:
     """Project costs across models without running tests."""
     try:
@@ -329,6 +348,24 @@ def cost(
     model_results = asyncio.run(run_models_parallel(cfg.models, sample_test.prompt))
     test_result = TestResult(test_case=sample_test, model_results=model_results)
     print_cost_projection([test_result], volume)
+
+    if len(cfg.models) > 1:
+        print_recommendation([test_result], daily_volume=volume)
+
+    # Generate HTML report
+    if report is not None:
+        from litmux.report import generate_report
+
+        report_path = report if report else "litmux-report.html"
+        html = generate_report([test_result], daily_volume=volume)
+        with open(report_path, "w") as f:
+            f.write(html)
+        console.print(f"  [green]📄 Report saved → {report_path}[/green]")
+        try:
+            import webbrowser
+            webbrowser.open(f"file://{os.path.abspath(report_path)}")
+        except Exception:
+            pass
 
 
 # ─── litmux history ──────────────────────────────────────────────
